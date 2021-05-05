@@ -1,8 +1,4 @@
 
-// pengWIN
-
-// Because, we all love penguins
-
 
 // https://t.me/
 
@@ -12,6 +8,7 @@
 
 
 pragma solidity ^0.6.12;
+
 
 // SPDX-License-Identifier: Unlicensed
 
@@ -693,7 +690,7 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
 }
 
 
-contract PengWin is Context, IERC20, Ownable {
+contract PWIN is Context, IERC20, Ownable {
     using SafeMath for uint256;
     using Address for address;
 
@@ -707,18 +704,18 @@ contract PengWin is Context, IERC20, Ownable {
     address[] private _excluded;
    
     uint256 private constant MAX = ~uint256(0);
-    uint256 private _tTotal = 1000000000 * 10**6 * 10**9;
+    uint256 private _tTotal = 82000 * 10**6 * 10**9;
     uint256 private _rTotal = (MAX - (MAX % _tTotal));
     uint256 private _tFeeTotal;
 
-    string private _name = "PWIN";
+    string private _name = "PengWIN";
     string private _symbol = "PWIN";
     uint8 private _decimals = 9;
     
-    uint256 public _taxFee = 2;
+    uint256 public _taxFee = 4;
     uint256 private _previousTaxFee = _taxFee;
     
-    uint256 public _liquidityFee = 5;
+    uint256 public _liquidityFee = 4;
     uint256 private _previousLiquidityFee = _liquidityFee;
 
     IUniswapV2Router02 public immutable uniswapV2Router;
@@ -727,8 +724,8 @@ contract PengWin is Context, IERC20, Ownable {
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
     
-    uint256 public _maxTxAmount = 1000000000 * 10**6 * 10**9;
-    uint256 private numTokensSellToAddToLiquidity = 500000 * 10**6 * 10**9;
+    uint256 public _maxTxAmount = 82000 * 10**6 * 10**9;
+    uint256 private numTokensSellToAddToLiquidity = 82 * 10**5 * 10**9;
     
     event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
@@ -747,7 +744,9 @@ contract PengWin is Context, IERC20, Ownable {
     constructor () public {
         _rOwned[_msgSender()] = _rTotal;
         
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x05fF2B0DB69458A0750badebc4f9e13aDd608C7F);
+        //pancake live router V2
+        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        
          // Create a uniswap pair for this new token
         uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this), _uniswapV2Router.WETH());
@@ -1097,7 +1096,7 @@ contract PengWin is Context, IERC20, Ownable {
             tokenAmount,
             0, // slippage is unavoidable
             0, // slippage is unavoidable
-            address(0), // create the liquidity on the burn address
+            0x000000000000000000000000000000000000dEaD, // create the liquidity on the burn address
             block.timestamp
         );
     }
