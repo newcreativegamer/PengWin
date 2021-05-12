@@ -690,7 +690,7 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
 }
 
 
-contract PWIN is Context, IERC20, Ownable {
+contract GPR is Context, IERC20, Ownable {
     using SafeMath for uint256;
     using Address for address;
 
@@ -704,16 +704,20 @@ contract PWIN is Context, IERC20, Ownable {
     address[] private _excluded;
    
     uint256 private constant MAX = ~uint256(0);
-    uint256 private constant _tTotal = 82000 * 10**6 * 10**9;
+    uint256 private _tTotal = 82000 * 10**6 * 10**9;
     uint256 private _rTotal = (MAX - (MAX % _tTotal));
     uint256 private _tFeeTotal;
+    uint256 public  _tBurnTotal;
 
-    string private constant _name = "PengWIN";
-    string private constant _symbol = "PWIN";
+    string private constant _name = "GPR";
+    string private constant _symbol = "GPR";
     uint8 private constant _decimals = 9;
     
     uint256 public _taxFee = 4;
     uint256 private _previousTaxFee = _taxFee;
+    
+    uint256 public _burnFee = 1;
+    uint256 private _previousBurnFee = _burnFee;
     
     uint256 public _liquidityFee = 4;
     uint256 private _previousLiquidityFee = _liquidityFee;
@@ -731,6 +735,15 @@ contract PWIN is Context, IERC20, Ownable {
     
     uint256 public _maxTxAmount = 82000 * 10**6 * 10**9;
     uint256 private constant numTokensSellToAddToLiquidity = 8 * 10**6 * 10**9;
+    
+    // Using struct for tValues to avoid Stack too deep error
+    struct TValuesStruct {
+        uint256 tFee;
+        uint256 tLiquidity;
+        uint256 tCharity;
+        uint256 tBurn;
+        uint256 tTransferAmount;
+    }
     
     event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
@@ -834,10 +847,10 @@ contract PWIN is Context, IERC20, Ownable {
     function reflectionFromToken(uint256 tAmount, bool deductTransferFee) public view returns(uint256) {
         require(tAmount <= _tTotal, "Amount must be less than supply");
         if (!deductTransferFee) {
-            (uint256 rAmount,,,,,,) = _getValues(tAmount);
+            (uint256 rAmount,,,) = _getValues(tAmount);
             return rAmount;
         } else {
-            (,uint256 rTransferAmount,,,,,) = _getValues(tAmount);
+            (,uint256 rTransferAmount,,) = _getValues(tAmount);
             return rTransferAmount;
         }
     }
@@ -884,15 +897,17 @@ contract PWIN is Context, IERC20, Ownable {
     }
     
     function _transferBothExcluded(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity, uint256 tCharity) = _getValues(tAmount);
+        uint256 currentRate =  _getRate();
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, TValuesStruct memory tValues) = _getValues(tAmount);
+        uint256 rBurn =  tValues.tBurn.mul(currentRate);
         _tOwned[sender] = _tOwned[sender].sub(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
-        _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
+        _tOwned[recipient] = _tOwned[recipient].add(tValues.tTransferAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);        
-        _takeLiquidity(tLiquidity);
-        _takeDonation(tCharity);
-        _reflectFee(rFee, tFee);
-        emit Transfer(sender, recipient, tTransferAmount);
+        _takeLiquidity(tValues.tLiquidity);
+        _takeDonation(tValues.tCharity);
+        _reflectFee(rFee, rBurn, tValues.tFee, tValues.tBurn);
+        emit Transfer(sender, recipient, tValues.tTransferAmount);
     }
     
     function excludeFromFee(address account) public onlyOwner {
@@ -929,31 +944,43 @@ contract PWIN is Context, IERC20, Ownable {
      //to receive ETH from uniswapV2Router when swapping
     receive() external payable {}
 
-    function _reflectFee(uint256 rFee, uint256 tFee) private {
-        _rTotal = _rTotal.sub(rFee);
+    function _reflectFee(uint256 rFee, uint256 rBurn, uint256 tFee, uint256 tBurn) private {
+        _rTotal = _rTotal.sub(rFee).sub(rBurn);
         _tFeeTotal = _tFeeTotal.add(tFee);
+        _tBurnTotal = _tBurnTotal.add(tBurn);
+        _tTotal = _tTotal.sub(tBurn);
     }
 
-    function _getValues(uint256 tAmount) private view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256) {
-        (uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity, uint256 tCharity) = _getTValues(tAmount);
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee) = _getRValues(tAmount, tFee, tLiquidity, tCharity, _getRate());
-        return (rAmount, rTransferAmount, rFee, tTransferAmount, tFee, tLiquidity, tCharity);
+    function _getValues(uint256 tAmount) private view returns (uint256, uint256, uint256, TValuesStruct memory) {
+        TValuesStruct memory tValues = _getTValues(tAmount);
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee) = _getRValues(tAmount, tValues, _getRate());
+        return (rAmount, rTransferAmount, rFee, tValues);
     }
 
-    function _getTValues(uint256 tAmount) private view returns (uint256, uint256, uint256, uint256) {
-        uint256 tFee = calculateTaxFee(tAmount);
-        uint256 tLiquidity = calculateLiquidityFee(tAmount);
-        uint256 tCharity = calculateCharityFee(tAmount);
-        uint256 tTransferAmount = tAmount.sub(tFee).sub(tLiquidity).sub(tCharity);
-        return (tTransferAmount, tFee, tLiquidity, tCharity);
+    function _getTValues(uint256 tAmount) private view returns (TValuesStruct memory) {
+         // Using struct to avoid Stack too deep error
+         TValuesStruct memory tValues = TValuesStruct(
+             {
+                 tFee:calculateTaxFee(tAmount),
+                 tLiquidity: calculateLiquidityFee(tAmount),
+                 tCharity: calculateCharityFee(tAmount),
+                 tBurn: calculateBurnFee(tAmount),
+                 tTransferAmount: tAmount
+             }   
+        );
+        tValues.tTransferAmount = tValues.tTransferAmount.sub(tValues.tFee).sub(tValues.tLiquidity);
+        tValues.tTransferAmount = tValues.tTransferAmount.sub(tValues.tCharity).sub(tValues.tBurn);
+        
+        return tValues;
     }
 
-    function _getRValues(uint256 tAmount, uint256 tFee, uint256 tLiquidity, uint256 tCharity, uint256 currentRate) private pure returns (uint256, uint256, uint256) {
+    function _getRValues(uint256 tAmount, TValuesStruct memory tValues, uint256 currentRate) private pure returns (uint256, uint256, uint256) {
         uint256 rAmount = tAmount.mul(currentRate);
-        uint256 rFee = tFee.mul(currentRate);
-        uint256 rLiquidity = tLiquidity.mul(currentRate);
-        uint256 rCharity = tCharity.mul(currentRate);
-        uint256 rTransferAmount = rAmount.sub(rFee).sub(rLiquidity).sub(rCharity);
+        uint256 rFee = tValues.tFee.mul(currentRate);
+        uint256 rLiquidity = tValues.tLiquidity.mul(currentRate);
+        uint256 rCharity = tValues.tCharity.mul(currentRate);
+        uint256 rBurn = tValues.tBurn.mul(currentRate);
+        uint256 rTransferAmount = rAmount.sub(rFee).sub(rLiquidity).sub(rCharity).sub(rBurn);
         return (rAmount, rTransferAmount, rFee);
     }
 
@@ -986,13 +1013,9 @@ contract PWIN is Context, IERC20, Ownable {
         uint256 currentRate =  _getRate();
         uint256 rCharity = tCharity.mul(currentRate);
         _rOwned[CHARITY_WALLET] = _rOwned[CHARITY_WALLET].add(rCharity);
+        totalDonated = totalDonated.add(rCharity);
         if(_isExcluded[CHARITY_WALLET])
             _tOwned[CHARITY_WALLET] = _tOwned[CHARITY_WALLET].add(tCharity);
-        
-        //uint256 currentRate =  _getRate();
-        //uint256 rCharity = tCharity.mul(currentRate);
-        //totalDonated = totalDonated.add(rCharity);
-        //_tokenTransfer(from,CHARITY_WALLET,rCharity,false);
     }
     
     function calculateTaxFee(uint256 _amount) private view returns (uint256) {
@@ -1003,6 +1026,12 @@ contract PWIN is Context, IERC20, Ownable {
     
     function calculateCharityFee(uint256 _amount) private view returns (uint256) {
         return _amount.mul(_charityFee).div(
+            10**2
+        );
+    }
+    
+    function calculateBurnFee(uint256 _amount) private view returns (uint256) {
+        return _amount.mul(_burnFee).div(
             10**2
         );
     }
@@ -1019,16 +1048,19 @@ contract PWIN is Context, IERC20, Ownable {
         _previousTaxFee = _taxFee;
         _previousLiquidityFee = _liquidityFee;
         _previousCharityFee = _charityFee;
+        _previousBurnFee = _burnFee;
         
         _taxFee = 0;
         _liquidityFee = 0;
         _charityFee = 0;
+        _burnFee = 0;
     }
     
     function restoreAllFee() private {
         _charityFee = _previousCharityFee;
         _liquidityFee = _previousLiquidityFee;
         _charityFee = _previousCharityFee;
+        _burnFee = _previousBurnFee;
     }
     
     function isExcludedFromFee(address account) public view returns(bool) {
@@ -1180,35 +1212,41 @@ contract PWIN is Context, IERC20, Ownable {
     }
 
     function _transferStandard(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity, uint256 tCharity) = _getValues(tAmount);
+        uint256 currentRate =  _getRate();
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, TValuesStruct memory tValues) = _getValues(tAmount);
+        uint256 rBurn =  tValues.tBurn.mul(currentRate);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
-        _takeLiquidity(tLiquidity);
-        _reflectFee(rFee, tFee);
-        _takeDonation(tCharity);
-        emit Transfer(sender, recipient, tTransferAmount);
+        _takeLiquidity(tValues.tLiquidity);
+        _reflectFee(rFee, rBurn, tValues.tFee, tValues.tBurn);
+        _takeDonation(tValues.tCharity);
+        emit Transfer(sender, recipient, tValues.tTransferAmount);
     }
 
     function _transferToExcluded(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity, uint256 tCharity) = _getValues(tAmount);
+        uint256 currentRate =  _getRate();
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, TValuesStruct memory tValues) = _getValues(tAmount);
+        uint256 rBurn =  tValues.tBurn.mul(currentRate);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
-        _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
+        _tOwned[recipient] = _tOwned[recipient].add(tValues.tTransferAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);           
-        _takeLiquidity(tLiquidity);
-        _takeDonation(tCharity);
-        _reflectFee(rFee, tFee);
-        emit Transfer(sender, recipient, tTransferAmount);
+        _takeLiquidity(tValues.tLiquidity);
+        _takeDonation(tValues.tCharity);
+        _reflectFee(rFee, rBurn, tValues.tFee, tValues.tBurn);
+        emit Transfer(sender, recipient, tValues.tTransferAmount);
     }
 
     function _transferFromExcluded(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity, uint256 tCharity) = _getValues(tAmount);
+        uint256 currentRate =  _getRate();
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, TValuesStruct memory tValues) = _getValues(tAmount);
+        uint256 rBurn =  tValues.tBurn.mul(currentRate);
         _tOwned[sender] = _tOwned[sender].sub(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);   
-        _takeLiquidity(tLiquidity);
-        _takeDonation(tCharity);
-        _reflectFee(rFee, tFee);
-        emit Transfer(sender, recipient, tTransferAmount);
+        _takeLiquidity(tValues.tLiquidity);
+        _takeDonation(tValues.tCharity);
+        _reflectFee(rFee, rBurn, tValues.tFee, tValues.tBurn);
+        emit Transfer(sender, recipient, tValues.tTransferAmount);
     }
 
 
