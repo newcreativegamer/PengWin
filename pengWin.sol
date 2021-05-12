@@ -2,9 +2,11 @@
 
 // https://t.me/
 
-// Tax is 7%
-// 2% distribution for holders
-// 5% fee for liquidity pool growth
+// Tax is 10%
+// 3% distribution for holders
+// 4% fee for liquidity pool growth
+// 1% fee for burn
+// 1% fee for charity donations
 
 
 pragma solidity ^0.6.12;
@@ -713,7 +715,7 @@ contract GPR is Context, IERC20, Ownable {
     string private constant _symbol = "GPR";
     uint8 private constant _decimals = 9;
     
-    uint256 public _taxFee = 4;
+    uint256 public _taxFee = 3;
     uint256 private _previousTaxFee = _taxFee;
     
     uint256 public _burnFee = 1;
