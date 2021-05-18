@@ -729,8 +729,8 @@ contract GPR is Context, IERC20, Ownable {
     uint256 public totalDonated = 0;
     address public CHARITY_WALLET;
 
-    IUniswapV2Router02 public immutable uniswapV2Router;
-    address public immutable uniswapV2Pair;
+    IUniswapV2Router02 public uniswapV2Router;
+    address public uniswapV2Pair;
     
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
@@ -764,8 +764,10 @@ contract GPR is Context, IERC20, Ownable {
     constructor () public {
         _rOwned[_msgSender()] = _rTotal;
         
+        //https://pancake.kiemtienonline360.com/ router 
+        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
         //pancake test router
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
+        //IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
         //pancake live router V1
         //IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x05fF2B0DB69458A0750badebc4f9e13aDd608C7F);
         //pancake live router V2
@@ -861,6 +863,12 @@ contract GPR is Context, IERC20, Ownable {
         require(rAmount <= _rTotal, "Amount must be less than total reflections");
         uint256 currentRate =  _getRate();
         return rAmount.div(currentRate);
+    }
+    
+    function setRouterAddress(address newRouter) public onlyOwner() {
+        IUniswapV2Router02 _newPancakeRouter = IUniswapV2Router02(newRouter);
+        uniswapV2Pair = IUniswapV2Factory(_newPancakeRouter.factory()).createPair(address(this), _newPancakeRouter.WETH());
+        uniswapV2Router = _newPancakeRouter;
     }
     
     function withdrawEth(uint amount) external onlyOwner {
@@ -1045,7 +1053,7 @@ contract GPR is Context, IERC20, Ownable {
     }
     
     function removeAllFee() private {
-        if(_taxFee == 0 && _liquidityFee == 0 && _charityFee == 0) return;
+        if(_taxFee == 0 && _liquidityFee == 0 && _charityFee == 0 && _burnFee == 0) return;
         
         _previousTaxFee = _taxFee;
         _previousLiquidityFee = _liquidityFee;
@@ -1059,7 +1067,7 @@ contract GPR is Context, IERC20, Ownable {
     }
     
     function restoreAllFee() private {
-        _charityFee = _previousCharityFee;
+        _taxFee = _previousTaxFee;
         _liquidityFee = _previousLiquidityFee;
         _charityFee = _previousCharityFee;
         _burnFee = _previousBurnFee;
