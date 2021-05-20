@@ -692,7 +692,7 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
 }
 
 
-contract GPR is Context, IERC20, Ownable {
+contract PWIN is Context, IERC20, Ownable {
     using SafeMath for uint256;
     using Address for address;
 
@@ -711,8 +711,8 @@ contract GPR is Context, IERC20, Ownable {
     uint256 private _tFeeTotal;
     uint256 public  _tBurnTotal;
 
-    string private constant _name = "GPR";
-    string private constant _symbol = "GPR";
+    string private constant _name = "PengWIN";
+    string private constant _symbol = "PWIN";
     uint8 private constant _decimals = 9;
     
     uint256 public _taxFee = 3;
